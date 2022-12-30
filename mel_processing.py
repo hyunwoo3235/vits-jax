@@ -37,15 +37,19 @@ hann_window = None
 
 
 def spectrogram_jax(y, n_fft, hop_size, win_size, center=False):
-    if jnp.min(y) < -1.:
+    if jnp.min(y) < -1.0:
         print("min value is ", jnp.min(y))
-    if jnp.max(y) > 1.:
+    if jnp.max(y) > 1.0:
         print("max value is ", jnp.max(y))
     global hann_window
     if hann_window is None:
         hann_window = jnp.hanning(win_size)
 
-    y = jnp.pad(y, ((0, 0), (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2))), mode="reflect")
+    y = jnp.pad(
+        y,
+        ((0, 0), (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2))),
+        mode="reflect",
+    )
 
     spec = spectrogram(
         y,
@@ -78,10 +82,12 @@ def spec_to_mel_jax(spec, n_fft, num_mels, sampling_rate, fmin, fmax):
     return mel
 
 
-def mel_spectrogram_jax(y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin, fmax, center=False):
-    if jnp.min(y) < -1.:
+def mel_spectrogram_jax(
+    y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin, fmax, center=False
+):
+    if jnp.min(y) < -1.0:
         print("min value is ", jnp.min(y))
-    if jnp.max(y) > 1.:
+    if jnp.max(y) > 1.0:
         print("max value is ", jnp.max(y))
 
     global hann_window, mel_basis
@@ -98,7 +104,11 @@ def mel_spectrogram_jax(y, n_fft, num_mels, sampling_rate, hop_size, win_size, f
             mel_scale="slaney",
         )
 
-    y = jnp.pad(y, ((0, 0), (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2))), mode="reflect")
+    y = jnp.pad(
+        y,
+        ((0, 0), (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2))),
+        mode="reflect",
+    )
 
     spec = spectrogram(
         y,
