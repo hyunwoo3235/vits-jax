@@ -56,7 +56,7 @@ class Encoder(nn.Module):
 
         x = x * x_mask
         for attn, norm_1, ffn, norm_2 in zip(
-                self.attn_layers, self.norm_layers_1, self.ffn_layers, self.norm_layers_2
+            self.attn_layers, self.norm_layers_1, self.ffn_layers, self.norm_layers_2
         ):
             y = attn(x, x, attn_mask=attn_mask, deterministic=deterministic)
             y = self.drop(y, deterministic=deterministic)
@@ -89,7 +89,7 @@ class MultiHeadAttention(nn.Module):
 
         if self.window_size is not None:
             n_heads_rel = 1 if self.heads_share else self.n_heads
-            rel_stddev = self.k_channels ** -0.5
+            rel_stddev = self.k_channels**-0.5
             self.emb_rel_k = self.param(
                 "emb_rel_k",
                 nn.initializers.normal(stddev=rel_stddev),
@@ -114,9 +114,13 @@ class MultiHeadAttention(nn.Module):
 
     def attention(self, query, key, value, mask=None, deterministic: bool = True):
         b, t_s, d, t_t = (*key.shape, query.shape[1])
-        query = query.reshape(b, t_t, self.n_heads, self.k_channels).transpose(0, 2, 1, 3)
+        query = query.reshape(b, t_t, self.n_heads, self.k_channels).transpose(
+            0, 2, 1, 3
+        )
         key = key.reshape(b, t_s, self.n_heads, self.k_channels).transpose(0, 2, 1, 3)
-        value = value.reshape(b, t_s, self.n_heads, self.k_channels).transpose(0, 2, 1, 3)
+        value = value.reshape(b, t_s, self.n_heads, self.k_channels).transpose(
+            0, 2, 1, 3
+        )
 
         scores = jnp.matmul(
             query / math.sqrt(self.k_channels), key.transpose(0, 1, 3, 2)
@@ -176,8 +180,8 @@ class MultiHeadAttention(nn.Module):
         else:
             padded_relative_embeddings = relative_embeddings
         used_relative_embeddings = padded_relative_embeddings[
-                                   :, slice_start_position:slice_end_position
-                                   ]
+            :, slice_start_position:slice_end_position
+        ]
         return used_relative_embeddings
 
     def _relative_position_to_absolute_position(self, x):
@@ -192,8 +196,8 @@ class MultiHeadAttention(nn.Module):
         x_flat = jnp.pad(x_flat, ((0, 0), (0, 0), (0, length - 1)))
 
         x_final = x_flat.reshape(batch, heads, length + 1, 2 * length - 1)[
-                  ..., :length, length - 1:
-                  ]
+            ..., :length, length - 1 :
+        ]
         return x_final
 
     def _absolute_position_to_relative_position(self, x):
