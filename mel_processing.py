@@ -47,7 +47,7 @@ def spectrogram_jax(y, n_fft, hop_size, win_size, center=False):
 
     y = jnp.pad(
         y,
-        ((0, 0), (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2))),
+        ((0, 0), (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2)), (0, 0)),
         mode="reflect",
     )
 
@@ -106,7 +106,7 @@ def mel_spectrogram_jax(
 
     y = jnp.pad(
         y,
-        ((0, 0), (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2))),
+        ((0, 0), (int((n_fft - hop_size) / 2), int((n_fft - hop_size) / 2)), (0, 0)),
         mode="reflect",
     )
 
