@@ -40,7 +40,7 @@ def piecewise_rational_quadratic_transform(
 
 
 def searchsorted(bin_locations, inputs, eps=1e-6):
-    bin_locations[..., -1] += eps
+    bin_locations.at[..., -1].add(eps)
     return jnp.sum(inputs[..., None] >= bin_locations, axis=-1) - 1
 
 
@@ -70,18 +70,15 @@ def unconstrained_rational_quadratic_spline(
             constant_values=0.0,
         )
         constant = jnp.log(jnp.exp(1 - min_derivative) - 1)
-        unnormalized_derivatives[..., 0] = constant
-        unnormalized_derivatives[..., -1] = constant
+        unnormalized_derivatives.at[..., 0].set(constant)
+        unnormalized_derivatives.at[..., -1].set(constant)
 
-        outputs[outside_interval_mask] = inputs[outside_interval_mask]
-        logabsdet[outside_interval_mask] = 0
+        outputs.at[outside_interval_mask].set(inputs[outside_interval_mask])
+        logabsdet.at[outside_interval_mask].set(0.0)
     else:
         raise NotImplementedError
 
-    (
-        outputs[inside_interval_mask],
-        logabsdet[inside_interval_mask],
-    ) = rational_quadratic_spline(
+    spline_outputs, spline_logabsdet = rational_quadratic_spline(
         inputs=inputs[inside_interval_mask],
         unnormalized_widths=unnormalized_widths[inside_interval_mask, :],
         unnormalized_heights=unnormalized_heights[inside_interval_mask, :],
@@ -95,6 +92,8 @@ def unconstrained_rational_quadratic_spline(
         min_bin_height=min_bin_height,
         min_derivative=min_derivative,
     )
+    outputs.at[inside_interval_mask].set(spline_outputs)
+    logabsdet.at[inside_interval_mask].set(spline_logabsdet)
 
     return outputs, logabsdet
 
@@ -127,11 +126,11 @@ def rational_quadratic_spline(
     widths = min_bin_width + (1 - min_bin_width * num_bins) * widths
     cum_widths = jnp.cumsum(widths, axis=-1)
     cum_widths = jnp.pad(
-        cum_widths, ((0, 0), (0, 0), (1, 0)), mode="constant", constant_values=0.0
+        cum_widths, ((0, 0), (1, 0)), mode="constant", constant_values=0.0
     )
     cum_widths = (right - left) * cum_widths + left
-    cum_widths[..., 0] = left
-    cum_widths[..., -1] = right
+    cum_widths.at[..., 0].set(left)
+    cum_widths.at[..., -1].set(right)
     widths = cum_widths[..., 1:] - cum_widths[..., :-1]
 
     derivatives = jax.nn.softplus(unnormalized_derivatives) + min_derivative
@@ -140,11 +139,11 @@ def rational_quadratic_spline(
     heights = min_bin_height + (1 - min_bin_height * num_bins) * heights
     cum_heights = jnp.cumsum(heights, axis=-1)
     cum_heights = jnp.pad(
-        cum_heights, ((0, 0), (0, 0), (1, 0)), mode="constant", constant_values=0.0
+        cum_heights, ((0, 0), (1, 0)), mode="constant", constant_values=0.0
     )
     cum_heights = (top - bottom) * cum_heights + bottom
-    cum_heights[..., 0] = bottom
-    cum_heights[..., -1] = top
+    cum_heights.at[..., 0].set(bottom)
+    cum_heights.at[..., -1].set(top)
     heights = cum_heights[..., 1:] - cum_heights[..., :-1]
 
     if inverse:
@@ -175,7 +174,8 @@ def rational_quadratic_spline(
         )
         c = -input_delta * (inputs - input_cumheights)
 
-        discriminant = b**2 - 4 * a * c
+        discriminant = b.pow(2) - 4 * a * c
+        assert (discriminant >= 0).all()
 
         root = (2 * c) / (-b - jnp.sqrt(discriminant))
         outputs = root * input_bin_widths + input_cumwidths

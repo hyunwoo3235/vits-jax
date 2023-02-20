@@ -8,7 +8,7 @@ import attentions
 import commons
 import modules
 
-from modules import FlaxConvWithWeightNorm
+from modules import FlaxConvWithWeightNorm, FlaxConvTransposeWithWeightNorm
 
 
 class StochasticDurationPredictor(nn.Module):
@@ -24,11 +24,11 @@ class StochasticDurationPredictor(nn.Module):
         self.log_flow = modules.Log()
 
         flows = []
-        flows.append(modules.ElementwiseAffine(2))
+        flows.append(modules.ElementwiseAffine(2, dtype=self.dtype))
         for i in range(self.n_flows):
             flows.append(
                 modules.ConvFlow(
-                    2, self.filter_channels, self.kernel_size, 3, self.dtype
+                    2, self.filter_channels, self.kernel_size, 3, dtype=self.dtype
                 )
             )
             flows.append(modules.Flip())
@@ -41,11 +41,11 @@ class StochasticDurationPredictor(nn.Module):
         )
 
         post_flows = []
-        post_flows.append(modules.ElementwiseAffine(2))
+        post_flows.append(modules.ElementwiseAffine(2, dtype=self.dtype))
         for i in range(self.n_flows):
             post_flows.append(
                 modules.ConvFlow(
-                    2, self.filter_channels, self.kernel_size, 3, self.dtype
+                    2, self.filter_channels, self.kernel_size, 3, dtype=self.dtype
                 )
             )
             post_flows.append(modules.Flip())
@@ -65,9 +65,9 @@ class StochasticDurationPredictor(nn.Module):
         x_mask,
         w=None,
         g=None,
-        reverse=False,
-        noise_scale=1.0,
-        deterministic=True,
+        reverse: bool = False,
+        noise_scale: float = 1.0,
+        deterministic: bool = True,
     ):
         x = jax.lax.stop_gradient(x)
         x = self.pre(x)
@@ -78,8 +78,6 @@ class StochasticDurationPredictor(nn.Module):
         x = self.proj(x) * x_mask
 
         if not reverse:
-            flows = self.flows
-
             logdet_tot_q = 0
             h_w = self.post_pre(w)
             h_w = self.post_convs(h_w, x_mask)
@@ -87,14 +85,16 @@ class StochasticDurationPredictor(nn.Module):
             e_q = (
                 jax.random.normal(
                     self.make_rng("normal"),
-                    (w.shape[0], 2, w.shape[2]),
+                    (w.shape[0], w.shape[2], 2),
                     dtype=self.dtype,
                 )
                 * x_mask
             )
             z_q = e_q
             for flow in self.post_flows:
-                z_q, logdet_q = flow(z_q, h_w, g=(x + h_w))
+                z_q, logdet_q = flow(
+                    z_q, x_mask, g=(x + h_w), deterministic=deterministic
+                )
                 logdet_tot_q += logdet_q
             z_u, z1 = jnp.split(z_q, 2, axis=2)
             u = nn.sigmoid(z_u) * x_mask
@@ -111,8 +111,10 @@ class StochasticDurationPredictor(nn.Module):
             z0, logdet = self.log_flow(z0, x_mask)
             logdet_tot += logdet
             z = jnp.concatenate([z0, z1], axis=2)
-            for flow in flows:
-                z, logdet = flow(z, x, g=g, reverse=reverse)
+            for flow in self.flows:
+                z, logdet = flow(
+                    z, x_mask, g=x, reverse=reverse, deterministic=deterministic
+                )
                 logdet_tot += logdet
             nll = (
                 jnp.sum(-0.5 * (jnp.log(2 * math.pi) + z**2) * x_mask, axis=(1, 2))
@@ -131,7 +133,7 @@ class StochasticDurationPredictor(nn.Module):
                 * noise_scale
             )
             for flow in flows:
-                z = flow(z, x_mask, g=x, reverse=reverse)
+                z = flow(z, x_mask, g=x, reverse=reverse, deterministic=deterministic)
             z0, z1 = jnp.split(z, 2, axis=2)
             logw = z0
             return logw
@@ -211,7 +213,7 @@ class ResidualCouplingBlock(nn.Module):
             flows.append(modules.Flip())
         self.flows = flows
 
-    def __call__(self, x, x_mask, g=None, reverse=False):
+    def __call__(self, x, x_mask, g=None, reverse: bool = False):
         if not reverse:
             for flow in self.flows:
                 x, _ = flow(x, x_mask, g=g, reverse=reverse)
@@ -243,7 +245,7 @@ class PosteriorEncoder(nn.Module):
         )
         self.proj = nn.Conv(self.out_channels * 2, (1,), dtype=self.dtype)
 
-    def __call__(self, x, x_lengths, g=None, deterministic=True):
+    def __call__(self, x, x_lengths, g=None, deterministic: bool = True):
         x_mask = jnp.arange(x.shape[1]) < x_lengths[:, None]
         x_mask = jnp.expand_dims(x_mask, axis=2).astype(self.dtype)
 
@@ -268,7 +270,7 @@ class Generator(nn.Module):
     upsample_initial_channel: int
     upsample_kernel_sizes: list
     gin_channels: int = 0
-    dype: jnp.dtype = jnp.float32
+    dtype: jnp.dtype = jnp.float32
 
     def setup(self):
         self.num_kernels = len(self.resblock_kernel_sizes)
@@ -277,10 +279,12 @@ class Generator(nn.Module):
         self.conv_pre = nn.Conv(self.upsample_initial_channel, (7,), 1, padding=3)
 
         self.ups = [
-            nn.ConvTranspose(
+            FlaxConvTransposeWithWeightNorm(
+                self.upsample_initial_channel // (2 ** i),
                 self.upsample_initial_channel // (2 ** (i + 1)),
                 (k,),
                 (u,),
+                dtype=self.dtype,
             )
             for i, (u, k) in enumerate(
                 zip(self.upsample_rates, self.upsample_kernel_sizes)
@@ -293,7 +297,7 @@ class Generator(nn.Module):
             for j, (k, d) in enumerate(
                 zip(self.resblock_kernel_sizes, self.resblock_dilation_sizes)
             ):
-                resblocks.append(modules.ResBlock1(ch, k, d))
+                resblocks.append(modules.ResBlock1(ch, k, d, dtype=self.dtype))
         self.resblocks = resblocks
 
         self.conv_post = nn.Conv(1, (7,), (1,), use_bias=False)
@@ -332,6 +336,9 @@ class DiscriminatorP(nn.Module):
     dtype: jnp.dtype = jnp.float32
 
     def setup(self):
+        if self.use_spectral_norm:
+            raise NotImplementedError
+
         self.convs = [
             FlaxConvWithWeightNorm(1, 32, (self.kernel_size, 1), (self.stride, 1)),
             FlaxConvWithWeightNorm(32, 128, (self.kernel_size, 1), (self.stride, 1)),
@@ -339,7 +346,7 @@ class DiscriminatorP(nn.Module):
             FlaxConvWithWeightNorm(512, 1024, (self.kernel_size, 1), (self.stride, 1)),
             FlaxConvWithWeightNorm(1024, 1024, (self.kernel_size, 1), 1),
         ]
-        self.conv_post = nn.Conv(1, (3, 1), 1)
+        self.conv_post = FlaxConvWithWeightNorm(1024, 1, (3, 1), 1)
 
     def __call__(self, x):
         fmap = []
@@ -366,6 +373,9 @@ class DiscriminatorS(nn.Module):
     dtype: jnp.dtype = jnp.float32
 
     def setup(self):
+        if self.use_spectral_norm:
+            raise NotImplementedError
+
         self.convs = [
             FlaxConvWithWeightNorm(1, 16, (15,), 1),
             FlaxConvWithWeightNorm(16, 64, (41,), 4, feature_group_count=4),
@@ -395,6 +405,9 @@ class MultiPeriodDiscriminator(nn.Module):
     dtype: jnp.dtype = jnp.float32
 
     def setup(self):
+        if self.use_spectral_norm:
+            raise NotImplementedError
+
         periods = [2, 3, 5, 7, 11]
 
         self.discriminators = [
@@ -437,8 +450,8 @@ class SynthesizerTrn(nn.Module):
     upsample_rates: int
     upsample_initial_channel: int
     upsample_kernel_sizes: int
-    n_speakers: int = (0,)
-    gin_channels: int = (0,)
+    n_speakers: int = 1
+    gin_channels: int = 0
     dtype: jnp.dtype = jnp.float32
 
     def setup(self):
@@ -496,14 +509,18 @@ class SynthesizerTrn(nn.Module):
         if self.n_speakers > 1:
             self.emb_g = nn.Embed(self.n_speakers, self.gin_channels)
 
-    def __call__(self, x, x_lengths, y, y_lengths, sid=None, deterministic=True):
-        x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths)
+    def __call__(
+        self, x, x_lengths, y, y_lengths, sid=None, deterministic: bool = True
+    ):
+        x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths, deterministic=deterministic)
         if self.n_speakers > 0:
             g = jnp.expand_dims(self.emb_g(sid), -1)
         else:
             g = None
 
-        z, m_q, logs_q, y_mask = self.enc_q(y, y_lengths, g=g)
+        z, m_q, logs_q, y_mask = self.enc_q(
+            y, y_lengths, g=g, deterministic=deterministic
+        )
         z_p = self.flow(z, y_mask, g=g)
 
         s_p_sq_r = jnp.exp(-2 * logs_p)
@@ -522,8 +539,8 @@ class SynthesizerTrn(nn.Module):
         attn = jnp.expand_dims(attn, 1)
         attn = jax.lax.stop_gradient(attn)
 
-        w = attn.sum(2)
-        l_length = self.dp(x, x_mask, w, g=g)
+        w = attn.sum(2).transpose(0, 2, 1)
+        l_length = self.dp(x, x_mask, w, g=g, deterministic=deterministic)
         l_length = l_length / jnp.sum(x_mask)
 
         m_p = jnp.matmul(attn.squeeze(1), m_p)
