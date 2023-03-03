@@ -319,7 +319,7 @@ class Generator(nn.Module):
                     xs = self.resblocks[i * self.num_kernels + j](x)
                 else:
                     xs += self.resblocks[i * self.num_kernels + j](x)
-                x = xs / self.num_kernels
+            x = xs / self.num_kernels
 
         x = nn.leaky_relu(x)
         x = self.conv_post(x)
