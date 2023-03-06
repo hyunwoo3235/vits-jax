@@ -95,7 +95,9 @@ class FlaxConvTransposeWithWeightNorm(nn.Module):
             "weight_g",
             lambda _: jnp.linalg.norm(self.weight_v, axis=(0, 1))[None, None, :],
         )
-        self.bias = self.param("bias", jax.nn.initializers.zeros, (self.conv_transpose.features,))
+        self.bias = self.param(
+            "bias", jax.nn.initializers.zeros, (self.conv_transpose.features,)
+        )
 
     def _get_normed_weights(self):
         weight_v_norm = jnp.linalg.norm(self.weight_v, axis=(0, 1))[None, None, :]
@@ -126,7 +128,7 @@ class DDSConv(nn.Module):
         norms_1 = []
         norms_2 = []
         for i in range(self.n_layers):
-            dilation = self.kernel_size ** i
+            dilation = self.kernel_size**i
             padding = (self.kernel_size * dilation - dilation) // 2
             convs_sep.append(
                 nn.Conv(
@@ -152,7 +154,7 @@ class DDSConv(nn.Module):
             x = x + g
 
         for conv, ln_1, conv_1x1, ln_2 in zip(
-                self.convs_sep, self.norms_1, self.convs_1x1, self.norms_2
+            self.convs_sep, self.norms_1, self.convs_1x1, self.norms_2
         ):
             r = x
 
@@ -190,7 +192,7 @@ class WN(nn.Module):
             )
 
         for i in range(self.n_layers):
-            dilation = self.dilation_rate ** i
+            dilation = self.dilation_rate**i
             padding = (self.kernel_size * dilation - dilation) // 2
             in_layers.append(
                 FlaxConvWithWeightNorm(
@@ -224,13 +226,13 @@ class WN(nn.Module):
             g = self.cond_layer(g)
 
         for i, (in_layer, res_skip_layer) in enumerate(
-                zip(self.in_layers, self.res_skip_layers)
+            zip(self.in_layers, self.res_skip_layers)
         ):
             x_in = in_layer(x)
 
             if g is not None:
                 cond_offset = i * 2 * self.hidden_channels
-                g_l = g[:, :, cond_offset: cond_offset + 2 * self.hidden_channels]
+                g_l = g[:, :, cond_offset : cond_offset + 2 * self.hidden_channels]
             else:
                 g_l = jnp.zeros_like(x_in)
 
@@ -242,7 +244,7 @@ class WN(nn.Module):
             if i < self.n_layers - 1:
                 res_acts = res_skip_acts[:, :, : self.hidden_channels]
                 x = (x + res_acts) * x_mask
-                output = output + res_skip_acts[:, :, self.hidden_channels:]
+                output = output + res_skip_acts[:, :, self.hidden_channels :]
             else:
                 output = output + res_skip_acts
 
@@ -358,7 +360,7 @@ class ResidualCouplingLayer(nn.Module):
         self.post = nn.Conv(half_channels, (1,), dtype=self.dtype)
 
     def __call__(
-            self, x, x_mask, g=None, reverse: bool = False, deterministic: bool = True
+        self, x, x_mask, g=None, reverse: bool = False, deterministic: bool = True
     ):
         x0, x1 = jnp.split(x, 2, axis=2)
         h = self.pre(x0) * x_mask
@@ -400,7 +402,7 @@ class ConvFlow(nn.Module):
         )
 
     def __call__(
-            self, x, x_mask, g=None, reverse: bool = False, deterministic: bool = True
+        self, x, x_mask, g=None, reverse: bool = False, deterministic: bool = True
     ):
         x0, x1 = jnp.split(x, 2, axis=2)
         h = self.pre(x0)
@@ -411,10 +413,10 @@ class ConvFlow(nn.Module):
         h = jnp.reshape(h, (b, t, c, -1)).transpose(0, 2, 1, 3)
 
         unnormalized_widths = h[..., : self.num_bins] / math.sqrt(self.filter_channels)
-        unnormalized_heights = h[..., self.num_bins: 2 * self.num_bins] / math.sqrt(
+        unnormalized_heights = h[..., self.num_bins : 2 * self.num_bins] / math.sqrt(
             self.filter_channels
         )
-        unnormalized_derivatives = h[..., 2 * self.num_bins:]
+        unnormalized_derivatives = h[..., 2 * self.num_bins :]
 
         x1, logabsdet = piecewise_rational_quadratic_transform(
             x1.transpose(0, 2, 1),

@@ -250,7 +250,7 @@ class PosteriorEncoder(nn.Module):
         x_mask = jnp.expand_dims(x_mask, axis=2).astype(self.dtype)
 
         x = self.pre(x) * x_mask
-        x = self.enc(x, x_lengths, g, deterministic)
+        x = self.enc(x, x_mask, g, deterministic)
         stats = self.proj(x) * x_mask
         m, logs = jnp.split(stats, 2, axis=2)
 
@@ -280,7 +280,7 @@ class Generator(nn.Module):
 
         self.ups = [
             FlaxConvTransposeWithWeightNorm(
-                self.upsample_initial_channel // (2 ** i),
+                self.upsample_initial_channel // (2**i),
                 self.upsample_initial_channel // (2 ** (i + 1)),
                 (k,),
                 (u,),
