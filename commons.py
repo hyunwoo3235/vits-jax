@@ -8,6 +8,12 @@ def convert_pad_shape(pad_shape):
     return pad_shape
 
 
+def intersperse(lst, item):
+    result = [item] * (len(lst) * 2 + 1)
+    result[1::2] = lst
+    return result
+
+
 def slice_segments(x, ids_str, segment_size=4):
     ret = jnp.zeros_like(x[:, :segment_size, :])
     for i in range(x.shape[0]):
@@ -29,17 +35,11 @@ def rand_slice_segments(x, x_lengths=None, segment_size=4, rng=jax.random.PRNGKe
     return ret, ids_str
 
 
-def convert_pad_shape(pad_shape):
-    l = pad_shape[::-1]
-    pad_shape = [item for sublist in l for item in sublist]
-    return pad_shape
-
-
 def sequence_mask(length, max_length=None):
     if max_length is None:
         max_length = length.max()
     x = jnp.arange(max_length, dtype=length.dtype)
-    return x.unsqueeze(0) < length.unsqueeze(1)
+    return jnp.expand_dims(x, 0) < jnp.expand_dims(length, 1)
 
 
 def generate_path(duration, mask):
@@ -54,7 +54,7 @@ def generate_path(duration, mask):
     path = sequence_mask(cum_duration_flat, t_y).astype(jnp.float32)
     path = path.view(b, t_x, t_y)
     path = path - jnp.pad(path, convert_pad_shape([[0, 0], [1, 0], [0, 0]]))[:, :-1]
-    path = path.unsqueeze(1).transpose(2, 3) * mask
+    path = jnp.expand_dims(path, 1).transpose(0, 1, 3, 2) * mask
     return path
 
 
