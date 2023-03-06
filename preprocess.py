@@ -1,4 +1,5 @@
 import argparse
+import os
 
 import librosa
 import numpy as np
@@ -13,6 +14,10 @@ from text.process_ko import cleaned_ko_text_to_sequence
 
 def _bytes_feature(value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+
+
+def _int64_feature(value):
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
 
 if __name__ == "__main__":
@@ -39,6 +44,10 @@ if __name__ == "__main__":
         1024,
     ).shape[1]
 
+    import random
+
+    random.shuffle(filepaths_and_text)
+
     with tf.io.TFRecordWriter(
         f"{args.out_name}.tfrecord",
         options=tf.io.TFRecordOptions(compression_type="GZIP"),
@@ -47,6 +56,9 @@ if __name__ == "__main__":
             enumerate(filepaths_and_text), total=len(filepaths_and_text)
         ):
             filepath, text = data[0], data[1]
+
+            if not os.path.exists(filepath):
+                continue
 
             text = cleaned_ko_text_to_sequence(text)
             if args.add_blank:
@@ -69,6 +81,10 @@ if __name__ == "__main__":
                 1024,
             )
 
+            text_length = np.array(len(text), dtype=np.int32)
+            wav_length = np.array(len(wav), dtype=np.int32)
+            spec_length = np.array(spec.shape[1], dtype=np.int32)
+
             text = np.pad(
                 text, (0, args.max_text_length - len(text)), "constant"
             ).astype(np.int32)
@@ -85,6 +101,9 @@ if __name__ == "__main__":
                         "text": _bytes_feature(text.tobytes()),
                         "wav": _bytes_feature(wav.tobytes()),
                         "spec": _bytes_feature(spec.tobytes()),
+                        "text_length": _int64_feature(text_length),
+                        "wav_length": _int64_feature(wav_length),
+                        "spec_length": _int64_feature(spec_length),
                     }
                 )
             )
