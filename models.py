@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import attentions
 import commons
 import modules
-
 from modules import FlaxConvWithWeightNorm, FlaxConvTransposeWithWeightNorm
 
 
@@ -80,12 +79,12 @@ class StochasticDurationPredictor(nn.Module):
         if not reverse:
             logdet_tot_q = 0
             h_w = self.post_pre(w)
-            h_w = self.post_convs(h_w, x_mask)
+            h_w = self.post_convs(h_w, x_mask, deterministic)
             h_w = self.post_proj(h_w) * x_mask
             e_q = (
                 jax.random.normal(
                     self.make_rng("normal"),
-                    (w.shape[0], w.shape[2], 2),
+                    (w.shape[0], w.shape[1], 2),
                     dtype=self.dtype,
                 )
                 * x_mask
@@ -103,8 +102,8 @@ class StochasticDurationPredictor(nn.Module):
                 nn.log_sigmoid(z_u) + nn.log_sigmoid(-z_u) * x_mask, axis=(1, 2)
             )
             logq = (
-                jnp.sum(-0.5 * (jnp.log(2 * math.pi) + z1**2) * x_mask, axis=(1, 2))
-                - logdet_q
+                jnp.sum(-0.5 * (jnp.log(2 * math.pi) + e_q**2) * x_mask, axis=(1, 2))
+                - logdet_tot_q
             )
 
             logdet_tot = 0
@@ -117,7 +116,7 @@ class StochasticDurationPredictor(nn.Module):
                 )
                 logdet_tot += logdet
             nll = (
-                jnp.sum(-0.5 * (jnp.log(2 * math.pi) + z**2) * x_mask, axis=(1, 2))
+                jnp.sum(0.5 * (jnp.log(2 * math.pi) + z**2) * x_mask, axis=(1, 2))
                 - logdet_tot
             )
             return nll + logq
@@ -127,7 +126,7 @@ class StochasticDurationPredictor(nn.Module):
             z = (
                 jax.random.normal(
                     self.make_rng("normal"),
-                    (x.shape[0], 2, x.shape[2]),
+                    (x.shape[0], x.shape[1], 2),
                     dtype=self.dtype,
                 )
                 * noise_scale
@@ -523,15 +522,15 @@ class SynthesizerTrn(nn.Module):
         )
         z_p = self.flow(z, y_mask, g=g)
 
-        s_p_sq_r = jnp.exp(-2 * logs_p)
+        s_p_sq_r = jnp.exp(-2 * logs_p).transpose(0, 2, 1)
         neg_cent1 = jnp.sum(
             -0.5 * math.log(2 * math.pi) - logs_p, axis=2, keepdims=True
         ).transpose(0, 2, 1)
-        neg_cent2 = jnp.matmul(-0.5 * (z_p**2), s_p_sq_r.transpose(0, 2, 1))
-        neg_cent3 = jnp.matmul(z_p, (m_p * s_p_sq_r).transpose(0, 2, 1))
+        neg_cent2 = jnp.matmul(-0.5 * (z_p**2), s_p_sq_r)
+        neg_cent3 = jnp.matmul(z_p, m_p.transpose(0, 2, 1) * s_p_sq_r)
         neg_cent4 = jnp.sum(
-            -0.5 * (m_p**2) * s_p_sq_r, axis=2, keepdims=True
-        ).transpose(0, 2, 1)
+            -0.5 * (m_p**2).transpose(0, 2, 1) * s_p_sq_r, axis=1, keepdims=True
+        )
         neg_cent = neg_cent1 + neg_cent2 + neg_cent3 + neg_cent4
 
         attn_mask = jnp.expand_dims(x_mask, 1) * jnp.expand_dims(y_mask, 2)
