@@ -3,7 +3,9 @@ import math
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
+import jax.experimental.host_callback as hcb
 
+import monotonic_align
 import attentions
 import commons
 import modules
@@ -534,9 +536,12 @@ class SynthesizerTrn(nn.Module):
         neg_cent = neg_cent1 + neg_cent2 + neg_cent3 + neg_cent4
 
         attn_mask = jnp.expand_dims(x_mask, 1) * jnp.expand_dims(y_mask, 2)
-        attn = commons.maximum_path_jax(neg_cent, attn_mask.squeeze(-1))
-        attn = jnp.expand_dims(attn, 1)
-        attn = jax.lax.stop_gradient(attn)
+        attn = hcb.call(
+            monotonic_align.maximum_path,
+            (neg_cent, attn_mask.squeeze(-1)),
+            result_shape=neg_cent,
+        )
+        attn = jax.lax.stop_gradient(jnp.expand_dims(attn, 1))
 
         w = attn.sum(2).transpose(0, 2, 1)
         l_length = self.dp(x, x_mask, w, g=g, deterministic=deterministic)

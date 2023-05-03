@@ -37,10 +37,6 @@ hann_window = None
 
 
 def spectrogram_jax(y, n_fft, hop_size, win_size, center=False):
-    if jnp.min(y) < -1.0:
-        print("min value is ", jnp.min(y))
-    if jnp.max(y) > 1.0:
-        print("max value is ", jnp.max(y))
     global hann_window
     if hann_window is None:
         hann_window = jnp.hanning(win_size)
@@ -85,11 +81,6 @@ def spec_to_mel_jax(spec, n_fft, num_mels, sampling_rate, fmin, fmax):
 def mel_spectrogram_jax(
     y, n_fft, num_mels, sampling_rate, hop_size, win_size, fmin, fmax, center=False
 ):
-    if jnp.min(y) < -1.0:
-        print("min value is ", jnp.min(y))
-    if jnp.max(y) > 1.0:
-        print("max value is ", jnp.max(y))
-
     global hann_window, mel_basis
     if hann_window is None:
         hann_window = jnp.hanning(win_size)

@@ -52,38 +52,7 @@ def generate_path(duration, mask):
 
     cum_duration_flat = cum_duration.view(b * t_x)
     path = sequence_mask(cum_duration_flat, t_y).astype(jnp.float32)
-    path = path.view(b, t_x, t_y)
+    path = jnp.reshape(path, (b, t_x, t_y))
     path = path - jnp.pad(path, convert_pad_shape([[0, 0], [1, 0], [0, 0]]))[:, :-1]
     path = jnp.expand_dims(path, 1).transpose(0, 1, 3, 2) * mask
     return path
-
-
-def maximum_path_jax(value, mask, max_neg_val=None):
-    if max_neg_val is None:
-        max_neg_val = -jnp.inf
-    value = value * mask
-
-    b, t_x, t_y = value.shape
-    direction = jnp.zeros(value.shape, dtype=jnp.int32)
-    v = jnp.zeros((b, t_x), dtype=jnp.float32)
-    x_range = jnp.arange(t_x, dtype=jnp.float32).reshape(1, -1)
-    for j in range(t_y):
-        v0 = jnp.pad(v, ((0, 0), (0, 1)), mode="constant", constant_values=max_neg_val)[
-            :, :-1
-        ]
-        v1 = v
-        max_mask = v1 >= v0
-        v_max = jnp.where(max_mask, v1, v0)
-        direction = direction.at[:, :, j].set(max_mask)
-
-        index_mask = x_range <= j
-        v = jnp.where(index_mask, v_max + value[:, :, j], max_neg_val)
-    direction = jnp.where(mask, direction, 1)
-
-    path = jnp.zeros(value.shape, dtype=jnp.float32)
-    index = mask[:, :, 0].sum(1).astype(jnp.int32) - 1
-    index_range = jnp.arange(b)
-    for j in reversed(range(t_y)):
-        path = path.at[index_range, index, j].set(1)
-        index = index + direction[index_range, index, j] - 1
-    return path * mask
