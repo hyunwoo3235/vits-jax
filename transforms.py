@@ -40,7 +40,7 @@ def piecewise_rational_quadratic_transform(
 
 
 def searchsorted(bin_locations, inputs, eps=1e-6):
-    bin_locations.at[..., -1].add(eps)
+    bin_locations = bin_locations.at[..., -1].add(eps)
     return jnp.sum(inputs[..., None] >= bin_locations, axis=-1) - 1
 
 
@@ -70,19 +70,32 @@ def unconstrained_rational_quadratic_spline(
             constant_values=0.0,
         )
         constant = jnp.log(jnp.exp(1 - min_derivative) - 1)
-        unnormalized_derivatives.at[..., 0].set(constant)
-        unnormalized_derivatives.at[..., -1].set(constant)
+        unnormalized_derivatives = unnormalized_derivatives.at[..., 0].set(constant)
+        unnormalized_derivatives = unnormalized_derivatives.at[..., -1].set(constant)
 
-        outputs.at[outside_interval_mask].set(inputs[outside_interval_mask])
-        logabsdet.at[outside_interval_mask].set(0.0)
+        outputs = jnp.where(outside_interval_mask, inputs, outputs)
+        logabsdet = jnp.where(outside_interval_mask, 0.0, logabsdet)
     else:
         raise NotImplementedError
 
+    inputs = jnp.clip(inputs, -tail_bound, tail_bound)
+
+    inputs = jnp.reshape(inputs, (-1))
+    unnormalized_widths = jnp.reshape(
+        unnormalized_widths, (inside_interval_mask.size, -1)
+    )
+    unnormalized_heights = jnp.reshape(
+        unnormalized_heights, (inside_interval_mask.size, -1)
+    )
+    unnormalized_derivatives = jnp.reshape(
+        unnormalized_derivatives, (inside_interval_mask.size, -1)
+    )
+
     spline_outputs, spline_logabsdet = rational_quadratic_spline(
-        inputs=inputs[inside_interval_mask],
-        unnormalized_widths=unnormalized_widths[inside_interval_mask, :],
-        unnormalized_heights=unnormalized_heights[inside_interval_mask, :],
-        unnormalized_derivatives=unnormalized_derivatives[inside_interval_mask, :],
+        inputs=inputs,
+        unnormalized_widths=unnormalized_widths,
+        unnormalized_heights=unnormalized_heights,
+        unnormalized_derivatives=unnormalized_derivatives,
         inverse=inverse,
         left=-tail_bound,
         right=tail_bound,
@@ -92,8 +105,11 @@ def unconstrained_rational_quadratic_spline(
         min_bin_height=min_bin_height,
         min_derivative=min_derivative,
     )
-    outputs.at[inside_interval_mask].set(spline_outputs)
-    logabsdet.at[inside_interval_mask].set(spline_logabsdet)
+    spline_outputs = jnp.reshape(spline_outputs, inside_interval_mask.shape)
+    spline_logabsdet = jnp.reshape(spline_logabsdet, inside_interval_mask.shape)
+
+    outputs = jnp.where(inside_interval_mask, spline_outputs, outputs)
+    logabsdet = jnp.where(inside_interval_mask, spline_logabsdet, logabsdet)
 
     return outputs, logabsdet
 
@@ -112,15 +128,7 @@ def rational_quadratic_spline(
     min_bin_height=DEFAULT_MIN_BIN_HEIGHT,
     min_derivative=DEFAULT_MIN_DERIVATIVE,
 ):
-    if jnp.min(inputs) < left or jnp.max(inputs) > right:
-        raise ValueError("Input to a transform is not within its domain")
-
     num_bins = unnormalized_widths.shape[-1]
-
-    if min_bin_width * num_bins > 1.0:
-        raise ValueError("Minimal bin width too large for the number of bins")
-    if min_bin_height * num_bins > 1.0:
-        raise ValueError("Minimal bin height too large for the number of bins")
 
     widths = jax.nn.softmax(unnormalized_widths, axis=-1)
     widths = min_bin_width + (1 - min_bin_width * num_bins) * widths
@@ -129,8 +137,8 @@ def rational_quadratic_spline(
         cum_widths, ((0, 0), (1, 0)), mode="constant", constant_values=0.0
     )
     cum_widths = (right - left) * cum_widths + left
-    cum_widths.at[..., 0].set(left)
-    cum_widths.at[..., -1].set(right)
+    cum_widths = cum_widths.at[..., 0].set(left)
+    cum_widths = cum_widths.at[..., -1].set(right)
     widths = cum_widths[..., 1:] - cum_widths[..., :-1]
 
     derivatives = jax.nn.softplus(unnormalized_derivatives) + min_derivative
@@ -142,8 +150,8 @@ def rational_quadratic_spline(
         cum_heights, ((0, 0), (1, 0)), mode="constant", constant_values=0.0
     )
     cum_heights = (top - bottom) * cum_heights + bottom
-    cum_heights.at[..., 0].set(bottom)
-    cum_heights.at[..., -1].set(top)
+    cum_heights = cum_heights.at[..., 0].set(bottom)
+    cum_heights = cum_heights.at[..., -1].set(top)
     heights = cum_heights[..., 1:] - cum_heights[..., :-1]
 
     if inverse:
@@ -174,7 +182,7 @@ def rational_quadratic_spline(
         )
         c = -input_delta * (inputs - input_cumheights)
 
-        discriminant = b.pow(2) - 4 * a * c
+        discriminant = jnp.power(b, 2) - 4 * a * c
         assert (discriminant >= 0).all()
 
         root = (2 * c) / (-b - jnp.sqrt(discriminant))

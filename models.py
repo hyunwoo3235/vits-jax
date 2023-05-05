@@ -538,10 +538,10 @@ class SynthesizerTrn(nn.Module):
         attn_mask = jnp.expand_dims(x_mask, 1) * jnp.expand_dims(y_mask, 2)
         attn = hcb.call(
             monotonic_align.maximum_path,
-            (neg_cent, attn_mask.squeeze(-1)),
+            (jax.lax.stop_gradient(neg_cent), attn_mask.squeeze(-1)),
             result_shape=neg_cent,
         )
-        attn = jax.lax.stop_gradient(jnp.expand_dims(attn, 1))
+        attn = jnp.expand_dims(attn, 1)
 
         w = attn.sum(2).transpose(0, 2, 1)
         l_length = self.dp(x, x_mask, w, g=g, deterministic=deterministic)
@@ -551,7 +551,7 @@ class SynthesizerTrn(nn.Module):
         logs_p = jnp.matmul(attn.squeeze(1), logs_p)
 
         z_slice, ids_slice = commons.rand_slice_segments(
-            z, y_lengths, self.segment_size
+            z, y_lengths, self.segment_size, rng=self.make_rng("normal")
         )
         o = self.dec(z_slice, g=g)
 

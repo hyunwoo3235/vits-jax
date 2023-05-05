@@ -17,9 +17,8 @@ def intersperse(lst, item):
 def slice_segments(x, ids_str, segment_size=4):
     ret = jnp.zeros_like(x[:, :segment_size, :])
     for i in range(x.shape[0]):
-        idx_str = ids_str[i]
-        idx_end = idx_str + segment_size
-        ret = ret.at[i].set(x[i, idx_str:idx_end, :])
+        idx = jnp.add(jnp.arange(segment_size), ids_str[i])
+        ret = ret.at[i].set(jnp.take(x[i], idx, axis=0))
     return ret
 
 

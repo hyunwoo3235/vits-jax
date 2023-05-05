@@ -8,11 +8,10 @@ import jax.numpy as jnp
 from transforms import piecewise_rational_quadratic_transform
 
 
-def fused_add_tanh_sigmoid_multiply(input_a, input_b, n_channels):
-    n_channels_int = n_channels[0]
+def fused_add_tanh_sigmoid_multiply(input_a, input_b, n_channels: int):
     in_act = input_a + input_b
-    t_act = jnp.tanh(in_act[:, :, :n_channels_int])
-    s_act = jax.nn.sigmoid(in_act[:, :, n_channels_int:])
+    t_act = jnp.tanh(in_act[:, :, :n_channels])
+    s_act = jax.nn.sigmoid(in_act[:, :, n_channels:])
     acts = t_act * s_act
     return acts
 
@@ -220,7 +219,6 @@ class WN(nn.Module):
 
     def __call__(self, x, x_mask, g=None, deterministic: bool = True):
         output = jnp.zeros_like(x)
-        n_channels_tensor = jnp.array([self.hidden_channels], dtype=jnp.int32)
 
         if g is not None:
             g = self.cond_layer(g)
@@ -236,7 +234,7 @@ class WN(nn.Module):
             else:
                 g_l = jnp.zeros_like(x_in)
 
-            acts = fused_add_tanh_sigmoid_multiply(x_in, g_l, n_channels_tensor)
+            acts = fused_add_tanh_sigmoid_multiply(x_in, g_l, self.hidden_channels)
             acts = self.dropout(acts, deterministic=deterministic)
 
             res_skip_acts = res_skip_layer(acts)
