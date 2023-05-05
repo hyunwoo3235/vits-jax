@@ -2,13 +2,13 @@ import math
 
 import flax.linen as nn
 import jax
-import jax.numpy as jnp
 import jax.experimental.host_callback as hcb
+import jax.numpy as jnp
 
-import monotonic_align
 import attentions
 import commons
 import modules
+import monotonic_align
 from modules import FlaxConvWithWeightNorm, FlaxConvTransposeWithWeightNorm
 
 
