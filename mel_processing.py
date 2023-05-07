@@ -75,6 +75,8 @@ def spec_to_mel_jax(spec, n_fft, num_mels, sampling_rate, fmin, fmax):
             mel_scale="slaney",
         )
     mel = apply_melscale(spec, mel_basis)
+    mel = spectral_normalize_jax(mel)
+
     return mel
 
 
@@ -115,4 +117,6 @@ def mel_spectrogram_jax(
     )
 
     mel = apply_melscale(spec, mel_basis)
+    mel = spectral_normalize_jax(mel)
+
     return mel
