@@ -2,7 +2,6 @@ import math
 
 import flax.linen as nn
 import jax
-import jax.experimental.host_callback as hcb
 import jax.numpy as jnp
 
 import attentions
@@ -81,7 +80,7 @@ class StochasticDurationPredictor(nn.Module):
         if not reverse:
             logdet_tot_q = 0
             h_w = self.post_pre(w)
-            h_w = self.post_convs(h_w, x_mask, deterministic)
+            h_w = self.post_convs(h_w, x_mask, deterministic=deterministic)
             h_w = self.post_proj(h_w) * x_mask
             e_q = (
                 jax.random.normal(
@@ -215,13 +214,17 @@ class ResidualCouplingBlock(nn.Module):
             flows.append(modules.Flip())
         self.flows = flows
 
-    def __call__(self, x, x_mask, g=None, reverse: bool = False):
+    def __call__(
+        self, x, x_mask, g=None, reverse: bool = False, deterministic: bool = True
+    ):
         if not reverse:
             for flow in self.flows:
-                x, _ = flow(x, x_mask, g=g, reverse=reverse)
+                x, _ = flow(
+                    x, x_mask, g=g, reverse=reverse, deterministic=deterministic
+                )
         else:
             for flow in reversed(self.flows):
-                x = flow(x, x_mask, g=g, reverse=reverse)
+                x = flow(x, x_mask, g=g, reverse=reverse, deterministic=deterministic)
         return x
 
 
@@ -516,7 +519,7 @@ class SynthesizerTrn(nn.Module):
         self, x, x_lengths, y, y_lengths, sid=None, deterministic: bool = True
     ):
         x, m_p, logs_p, x_mask = self.enc_p(x, x_lengths, deterministic=deterministic)
-        if self.n_speakers > 0:
+        if self.n_speakers > 1:
             g = jnp.expand_dims(self.emb_g(sid), -1)
         else:
             g = None
@@ -524,7 +527,7 @@ class SynthesizerTrn(nn.Module):
         z, m_q, logs_q, y_mask = self.enc_q(
             y, y_lengths, g=g, deterministic=deterministic
         )
-        z_p = self.flow(z, y_mask, g=g)
+        z_p = self.flow(z, y_mask, g=g, deterministic=deterministic)
 
         s_p_sq_r = jnp.exp(-2 * logs_p).transpose(0, 2, 1)
         neg_cent1 = jnp.sum(
@@ -538,10 +541,10 @@ class SynthesizerTrn(nn.Module):
         neg_cent = neg_cent1 + neg_cent2 + neg_cent3 + neg_cent4
 
         attn_mask = jnp.expand_dims(x_mask, 1) * jnp.expand_dims(y_mask, 2)
-        attn = hcb.call(
+        attn = jax.pure_callback(
             monotonic_align.maximum_path,
+            jax.ShapeDtypeStruct(neg_cent.shape, neg_cent.dtype),
             (jax.lax.stop_gradient(neg_cent), attn_mask.squeeze(-1)),
-            result_shape=neg_cent,
         )
         attn = jnp.expand_dims(attn, 1)
 

@@ -36,6 +36,22 @@ mel_basis = None
 hann_window = None
 
 
+def mel_setup(n_fft, num_mels, sampling_rate, hop_size, win_size, fmin, fmax):
+    global hann_window, mel_basis
+    if hann_window is None:
+        hann_window = jnp.hanning(win_size)
+    if mel_basis is None:
+        mel_basis = melscale_fbanks(
+            n_freqs=n_fft // 2 + 1,
+            n_mels=num_mels,
+            sample_rate=sampling_rate,
+            f_min=fmin,
+            f_max=fmax,
+            norm="slaney",
+            mel_scale="slaney",
+        )
+
+
 def spectrogram_jax(y, n_fft, hop_size, win_size, center=False):
     global hann_window
     if hann_window is None:

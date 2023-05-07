@@ -62,7 +62,7 @@ class Encoder(nn.Module):
             y = self.drop(y, deterministic=deterministic)
             x = norm_1(x + y)
 
-            y = ffn(x, x_mask)
+            y = ffn(x, x_mask, deterministic=deterministic)
             y = self.drop(y, deterministic=deterministic)
             x = norm_2(x + y)
 
