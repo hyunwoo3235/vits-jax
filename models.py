@@ -155,6 +155,7 @@ class TextEncoder(nn.Module):
         self.emb = nn.Embed(
             self.n_vocab,
             self.hidden_channels,
+            embedding_init=nn.initializers.normal(stddev=self.hidden_channels**-0.5),
             dtype=self.dtype,
         )
 
@@ -285,6 +286,7 @@ class Generator(nn.Module):
                 self.upsample_initial_channel // (2 ** (i + 1)),
                 (k,),
                 (u,),
+                kernel_init=nn.initializers.normal(stddev=0.01),
                 dtype=self.dtype,
             )
             for i, (u, k) in enumerate(

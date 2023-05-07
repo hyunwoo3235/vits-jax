@@ -1,11 +1,13 @@
 import math
-from typing import Tuple, Sequence, Union, Optional
+from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 
 from transforms import piecewise_rational_quadratic_transform
+
+default_kernel_init = nn.initializers.lecun_normal()
 
 
 def fused_add_tanh_sigmoid_multiply(input_a, input_b, n_channels: int):
@@ -24,6 +26,7 @@ class FlaxConvWithWeightNorm(nn.Module):
     padding: Union[str, int, Sequence[Union[int, Tuple[int, int]]]] = "SAME"
     input_dilation: Union[None, int, Sequence[int]] = 1
     kernel_dilation: Union[None, int, Sequence[int]] = 1
+    kernel_init: Callable[[Any, Any, Any], Any] = default_kernel_init
     feature_group_count: int = 1
     dtype: jnp.dtype = jnp.float32
 
@@ -32,7 +35,6 @@ class FlaxConvWithWeightNorm(nn.Module):
             features=self.out_features,
             kernel_size=self.kernel_size,
             strides=self.strides,
-            kernel_init=jax.nn.initializers.he_normal(),
             padding=self.padding,
             feature_group_count=self.feature_group_count,
             dtype=self.dtype,
@@ -41,9 +43,7 @@ class FlaxConvWithWeightNorm(nn.Module):
             self.in_features // self.feature_group_count,
             self.out_features,
         )
-        self.weight_v = self.param(
-            "weight_v", jax.nn.initializers.he_normal(), weight_shape
-        )
+        self.weight_v = self.param("weight_v", self.kernel_init, weight_shape)
         self.weight_g = self.param(
             "weight_g",
             lambda _: jnp.linalg.norm(self.weight_v, axis=(0, 1))[None, None, :],
@@ -71,6 +71,7 @@ class FlaxConvTransposeWithWeightNorm(nn.Module):
     strides: int = 1
     padding: Union[str, int, Sequence[Union[int, Tuple[int, int]]]] = "SAME"
     kernel_dilation: Optional[Sequence[int]] = None
+    kernel_init: Callable[[Any, Any, Any], Any] = default_kernel_init
     dtype: jnp.dtype = jnp.float32
 
     def setup(self):
@@ -78,7 +79,6 @@ class FlaxConvTransposeWithWeightNorm(nn.Module):
             features=self.out_features,
             kernel_size=self.kernel_size,
             strides=self.strides,
-            kernel_init=jax.nn.initializers.he_normal(),
             padding=self.padding,
             kernel_dilation=self.kernel_dilation,
             dtype=self.dtype,
@@ -87,9 +87,7 @@ class FlaxConvTransposeWithWeightNorm(nn.Module):
             self.in_features,
             self.out_features,
         )
-        self.weight_v = self.param(
-            "weight_v", jax.nn.initializers.he_normal(), weight_shape
-        )
+        self.weight_v = self.param("weight_v", self.kernel_init, weight_shape)
         self.weight_g = self.param(
             "weight_g",
             lambda _: jnp.linalg.norm(self.weight_v, axis=(0, 1))[None, None, :],
@@ -238,7 +236,6 @@ class WN(nn.Module):
             acts = self.dropout(acts, deterministic=deterministic)
 
             res_skip_acts = res_skip_layer(acts)
-
             if i < self.n_layers - 1:
                 res_acts = res_skip_acts[:, :, : self.hidden_channels]
                 x = (x + res_acts) * x_mask
@@ -246,7 +243,7 @@ class WN(nn.Module):
             else:
                 output = output + res_skip_acts
 
-        return output
+        return output * x_mask
 
 
 class ResBlock1(nn.Module):
@@ -262,6 +259,7 @@ class ResBlock1(nn.Module):
                 self.channels,
                 (self.kernel_size,),
                 kernel_dilation=dilation,
+                kernel_init=nn.initializers.normal(stddev=0.01),
                 dtype=self.dtype,
             )
             for dilation in self.dilations
@@ -272,6 +270,7 @@ class ResBlock1(nn.Module):
                 self.channels,
                 (self.kernel_size,),
                 kernel_dilation=1,
+                kernel_init=nn.initializers.normal(stddev=0.01),
                 dtype=self.dtype,
             )
             for _ in self.dilations
